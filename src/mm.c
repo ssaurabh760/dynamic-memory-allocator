@@ -1,6 +1,7 @@
 #include "mm.h"
 #include "config.h"
 #include "memlib.h"
+#include <stdio.h>
 #include <string.h>
 
 /* Single word (8) or double word (16) alignment */
@@ -266,10 +267,65 @@ static void place(void *bp, size_t asize) {
 }
 
 /*
- * mm_check - Heap consistency checker (stub for now).
- * Returns non-zero if the heap is consistent.
+ * mm_check - Heap consistency checker.
+ * Checks:
+ *   1. Every free block is properly coalesced (no adjacent free blocks)
+ *   2. Headers match footers for every block
+ *   3. All blocks lie within heap boundaries
+ *   4. All blocks are properly aligned
+ * Returns non-zero if the heap is consistent, 0 on error.
  */
 int mm_check(void) {
-    /* TODO: Implement in Deliverable 1 */
+    char *bp;
+    char *lo = (char *)mem_heap_lo();
+    char *hi = (char *)mem_heap_hi();
+    int prev_free = 0;
+
+    /* Check prologue block */
+    if (GET_SIZE(HDRP(heap_listp)) != DSIZE || !GET_ALLOC(HDRP(heap_listp))) {
+        fprintf(stderr, "mm_check: bad prologue header\n");
+        return 0;
+    }
+    if (GET(HDRP(heap_listp)) != GET(FTRP(heap_listp))) {
+        fprintf(stderr, "mm_check: prologue header != footer\n");
+        return 0;
+    }
+
+    /* Iterate through all blocks */
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+        /* Check block lies within heap boundaries */
+        if ((char *)bp < lo || (char *)bp > hi) {
+            fprintf(stderr, "mm_check: block %p outside heap [%p, %p]\n", (void *)bp, (void *)lo,
+                    (void *)hi);
+            return 0;
+        }
+
+        /* Check alignment */
+        if ((unsigned long)bp % ALIGNMENT != 0) {
+            fprintf(stderr, "mm_check: block %p not %d-byte aligned\n", (void *)bp, ALIGNMENT);
+            return 0;
+        }
+
+        /* Check header matches footer */
+        if (GET(HDRP(bp)) != GET(FTRP(bp))) {
+            fprintf(stderr, "mm_check: header != footer at block %p\n", (void *)bp);
+            return 0;
+        }
+
+        /* Check no two consecutive free blocks (coalescing invariant) */
+        int curr_free = !GET_ALLOC(HDRP(bp));
+        if (prev_free && curr_free) {
+            fprintf(stderr, "mm_check: consecutive free blocks at %p\n", (void *)bp);
+            return 0;
+        }
+        prev_free = curr_free;
+    }
+
+    /* Check epilogue */
+    if (GET_SIZE(HDRP(bp)) != 0 || !GET_ALLOC(HDRP(bp))) {
+        fprintf(stderr, "mm_check: bad epilogue at %p\n", (void *)bp);
+        return 0;
+    }
+
     return 1;
 }
