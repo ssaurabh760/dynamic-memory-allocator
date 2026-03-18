@@ -2,30 +2,42 @@
 
 ## Test Environment
 - Platform: macOS (Darwin 23.6.0)
-- Compiler: gcc with -O2
+- Compiler: gcc with -O2 -Wall -Werror -Wextra
 - Heap size: 64 MB simulated
 
-## Throughput Results (100,000 operations)
+## Throughput Results (100,000 mixed malloc/free operations)
 
-| Allocator Version         | Throughput (KOPS) | Notes                                   |
-|---------------------------|-------------------|-----------------------------------------|
-| Implicit free list (v0.1) | ~1,500            | Linear scan through all blocks          |
-| Explicit free list (v0.2) | ~35,000           | Linked list of free blocks only         |
-| Optimized (v0.3)          | ~34,000           | Footer elimination + bounded first-fit  |
+| Allocator Version         | Throughput (KOPS) | Search Complexity  |
+|---------------------------|-------------------|--------------------|
+| Implicit free list (v0.1) | ~1,500            | O(total blocks)    |
+| Explicit free list (v0.2) | ~35,000           | O(free blocks)     |
+| Optimized (v0.3+)         | ~34,000           | O(min(free, 50))   |
 
-## Optimizations Applied (v0.3)
+**Target: 14,500 KOPS** | **Achieved: ~34,000 KOPS** (2.3x target)
 
-1. **Footer elimination**: Allocated blocks have no footer; prev_alloc bit stored in next block's header. Reduces per-block overhead from 16 bytes to 8 bytes.
-2. **Bounded first-fit**: Searches at most 50 free blocks before giving up and extending heap. Prevents worst-case O(n) scans.
-3. **In-place realloc**: Three strategies before fallback copy:
-   - Shrink in place with splitting
-   - Absorb next free block
-   - Absorb previous free block (with memmove)
-4. **Adaptive heap extension**: Extends by max(request, CHUNKSIZE) to reduce sbrk calls.
+## Trace-Driven Results
 
-## Test Results
+| Trace File          | Operations | Throughput (KOPS) | Peak Heap | Errors |
+|---------------------|-----------|-------------------|-----------|--------|
+| trace_random.txt    | 56        | 538               | 12 KB     | 0      |
+| trace_coalesce.txt  | 42        | 857               | 4 KB      | 0      |
+| trace_realloc.txt   | 40        | 816               | 4 KB      | 0      |
+| trace_binary.txt    | 70        | 1,429             | 4 KB      | 0      |
+| trace_pathological  | 44        | 1,467             | 27 KB     | 0      |
 
-- Basic tests: 11/11 PASS
-- Coalesce tests: 5/5 PASS
-- Stress tests: 8/8 PASS
-- AddressSanitizer: Zero errors
+## Optimizations Applied
+
+1. **Footer elimination**: Reduces per-block overhead from 16 to 8 bytes for allocated blocks
+2. **Bounded first-fit (50)**: Caps search at 50 free blocks for consistent O(1) amortized allocation
+3. **In-place realloc**: Shrink, absorb-next, absorb-prev strategies before malloc+copy+free fallback
+4. **Explicit free list with LIFO**: O(1) insertion, searches only free blocks
+
+## Test Summary
+
+| Test Suite     | Tests | Result |
+|----------------|-------|--------|
+| Basic          | 11    | 11/11 PASS |
+| Coalesce       | 5     | 5/5 PASS   |
+| Stress         | 8     | 8/8 PASS   |
+| Trace-driven   | 5     | 5/5 PASS   |
+| AddressSanitizer | all | Zero errors |

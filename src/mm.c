@@ -78,7 +78,9 @@ static void free_list_insert(void *bp);
 static void free_list_remove(void *bp);
 
 /*
- * Set or clear the prev_alloc bit in a block's header.
+ * set_prev_alloc - Set or clear the prev_alloc bit (bit 1) in bp's header.
+ * This is essential for footer elimination: allocated blocks have no footer,
+ * so the next block's header must record whether the previous block is allocated.
  */
 static inline void set_prev_alloc(void *bp, int prev_alloc) {
     if (prev_alloc)
@@ -88,7 +90,9 @@ static inline void set_prev_alloc(void *bp, int prev_alloc) {
 }
 
 /*
- * free_list_insert - LIFO insertion at head.
+ * free_list_insert - Insert a free block at the head of the free list (LIFO).
+ * LIFO policy gives O(1) insertion and good temporal locality — recently
+ * freed blocks appear first in subsequent searches.
  */
 static void free_list_insert(void *bp) {
     SET_PREV_FREE(bp, NULL);
@@ -102,7 +106,8 @@ static void free_list_insert(void *bp) {
 }
 
 /*
- * free_list_remove - Remove a block from the explicit free list.
+ * free_list_remove - Unlink a block from the doubly-linked explicit free list.
+ * Handles both middle-of-list and head-of-list cases.
  */
 static void free_list_remove(void *bp) {
     void *prev = GET_PREV_FREE(bp);
@@ -118,11 +123,18 @@ static void free_list_remove(void *bp) {
 }
 
 /*
- * mm_init - Initialize the allocator.
+ * mm_init - Initialize the allocator. Creates the initial heap with:
+ *   - 8-byte alignment padding
+ *   - Prologue block (header + footer, always allocated, acts as boundary)
+ *   - Epilogue header (zero-size, always allocated, marks end of heap)
+ * Then extends the heap with CHUNKSIZE bytes of free space.
+ *
+ * Returns 0 on success, -1 on failure.
  */
 int mm_init(void) {
     free_list_head = NULL;
 
+    /* Allocate space for padding + prologue (header+footer) + epilogue header */
     if ((heap_listp = mem_sbrk(4 * WSIZE)) == (void *)-1)
         return -1;
 
@@ -130,8 +142,9 @@ int mm_init(void) {
     PUT(heap_listp + (1 * WSIZE), PACK(DSIZE, 1, 1));     /* Prologue header */
     PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, 1, 1));     /* Prologue footer */
     PUT(heap_listp + (3 * WSIZE), PACK(0, 1, 1));         /* Epilogue header */
-    heap_listp += (2 * WSIZE);
+    heap_listp += (2 * WSIZE); /* Point to prologue payload (between header and footer) */
 
+    /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
         return -1;
 
@@ -139,7 +152,14 @@ int mm_init(void) {
 }
 
 /*
- * mm_malloc - Allocate a block. Uses bounded first-fit search.
+ * mm_malloc - Allocate a block with at least 'size' bytes of payload.
+ *
+ * 1. Compute adjusted block size (add header overhead, enforce minimum and alignment)
+ * 2. Search explicit free list using bounded first-fit (max 50 blocks)
+ * 3. If fit found, place block (may split) and return payload pointer
+ * 4. If no fit, extend heap and place
+ *
+ * Returns pointer to payload on success, NULL on failure.
  */
 void *mm_malloc(size_t size) {
     size_t asize;
@@ -171,7 +191,13 @@ void *mm_malloc(size_t size) {
 }
 
 /*
- * mm_free - Free a block and coalesce.
+ * mm_free - Free a block and coalesce with adjacent free blocks.
+ *
+ * Steps:
+ * 1. Mark block as free in header and write footer
+ * 2. Clear prev_alloc bit in the next block's header
+ * 3. If next block is also free, sync its footer with updated header
+ * 4. Coalesce with adjacent free blocks
  */
 void mm_free(void *ptr) {
     if (ptr == NULL)
@@ -195,7 +221,15 @@ void mm_free(void *ptr) {
 }
 
 /*
- * mm_realloc - Optimized resize with in-place operations.
+ * mm_realloc - Resize a previously allocated block to 'size' bytes.
+ *
+ * Optimization strategy (tries in order to minimize copying):
+ *   Case 0: Block already large enough — return as-is, split if possible
+ *   Case 1: Next block is free — absorb it in-place (no data movement)
+ *   Case 2: Previous block is free — absorb and memmove data backward
+ *   Fallback: malloc new block, memcpy data, free old block
+ *
+ * Special cases: realloc(NULL, size) = malloc(size), realloc(ptr, 0) = free(ptr)
  */
 void *mm_realloc(void *ptr, size_t size) {
     if (ptr == NULL)
@@ -322,7 +356,14 @@ void *mm_realloc(void *ptr, size_t size) {
 }
 
 /*
- * extend_heap - Extend the heap.
+ * extend_heap - Grow the heap by 'words' words via mem_sbrk.
+ *
+ * The new space overwrites the old epilogue header (becoming the new block's
+ * header position), and a new epilogue is placed at the end. The prev_alloc
+ * bit is inherited from the old epilogue. The new free block is then coalesced
+ * with the previous block if it was free.
+ *
+ * Returns pointer to the new free block, or NULL on failure.
  */
 static void *extend_heap(size_t words) {
     char *bp;
@@ -346,7 +387,19 @@ static void *extend_heap(size_t words) {
 }
 
 /*
- * coalesce - Merge adjacent free blocks.
+ * coalesce - Merge bp with adjacent free blocks using boundary tag coalescing.
+ *
+ * Uses prev_alloc bit (from bp's header) and next block's alloc bit to determine
+ * which of the four coalescing cases applies. Removes merged neighbors from the
+ * free list before merging, then inserts the resulting block.
+ *
+ * Cases:
+ *   1: [alloc][bp][alloc] — no merge
+ *   2: [alloc][bp][free ] — merge with next
+ *   3: [free ][bp][alloc] — merge with prev (requires prev's footer)
+ *   4: [free ][bp][free ] — merge with both
+ *
+ * Returns pointer to the coalesced free block.
  */
 static void *coalesce(void *bp) {
     size_t prev_alloc = GET_PREV_ALLOC(HDRP(bp));
@@ -396,7 +449,9 @@ static void *coalesce(void *bp) {
 }
 
 /*
- * find_fit - Bounded first-fit search (max MAX_SEARCH blocks).
+ * find_fit - Search the explicit free list for a block >= asize bytes.
+ * Uses bounded first-fit: checks at most MAX_SEARCH (50) blocks to avoid
+ * O(n) scans in fragmented heaps. Returns NULL if no fit found within the limit.
  */
 static void *find_fit(size_t asize) {
     void *bp;
@@ -412,7 +467,13 @@ static void *find_fit(size_t asize) {
 }
 
 /*
- * place - Place the requested block, splitting if possible.
+ * place - Allocate asize bytes from free block bp.
+ *
+ * 1. Remove bp from the free list
+ * 2. If (block_size - asize) >= MIN_BLOCK_SIZE, split: allocate the front
+ *    portion and create a new free block from the remainder
+ * 3. Otherwise, use the entire block (accept internal fragmentation)
+ * 4. Update prev_alloc bits in subsequent blocks
  */
 static void place(void *bp, size_t asize) {
     size_t csize = GET_SIZE(HDRP(bp));
@@ -442,7 +503,14 @@ static void place(void *bp, size_t asize) {
 }
 
 /*
- * mm_check - Heap consistency checker.
+ * mm_check - Heap consistency checker. Validates:
+ *   1. Prologue and epilogue blocks are well-formed
+ *   2. All blocks lie within heap boundaries and are 16-byte aligned
+ *   3. Free blocks have matching header and footer
+ *   4. No two adjacent blocks are both free (coalescing invariant)
+ *   5. Every free block in the heap appears in the free list (and vice versa)
+ *
+ * Returns 1 if heap is consistent, 0 on error (prints diagnostics to stderr).
  */
 int mm_check(void) {
     char *bp;
