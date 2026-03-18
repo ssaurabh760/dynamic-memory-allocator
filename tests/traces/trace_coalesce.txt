@@ -1,0 +1,56 @@
+# Heavy coalescing patterns
+# Allocate adjacent blocks then free them in orders that trigger all 4 coalescing cases
+
+# Case 1: No coalescing (free isolated block)
+a 0 64
+a 1 64
+a 2 64
+a 3 64
+a 4 64
+f 2
+a 2 64
+
+# Case 2: Coalesce with next
+f 2
+f 3
+a 10 140
+
+# Case 3: Coalesce with prev
+f 1
+f 0
+a 11 140
+
+# Case 4: Coalesce with both
+a 20 32
+a 21 32
+a 22 32
+a 23 32
+a 24 32
+f 21
+f 23
+f 22
+a 25 100
+
+# Repeated coalesce cycles
+a 30 128
+a 31 128
+a 32 128
+a 33 128
+a 34 128
+f 30
+f 31
+f 32
+f 33
+f 34
+a 35 600
+
+# Free everything and reallocate big
+f 4
+f 10
+f 11
+f 20
+f 24
+f 25
+f 35
+a 40 4000
+f 40

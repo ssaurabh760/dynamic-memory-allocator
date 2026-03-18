@@ -1,0 +1,58 @@
+# Random malloc/free pattern
+# Mix of allocation sizes with random frees
+a 0 64
+a 1 128
+a 2 32
+a 3 256
+a 4 16
+f 1
+a 5 512
+f 3
+a 6 64
+f 0
+a 7 128
+f 4
+a 8 1024
+f 2
+a 9 48
+f 6
+a 10 256
+f 5
+a 11 96
+f 7
+a 12 2048
+f 9
+f 8
+a 13 32
+a 14 64
+f 10
+f 11
+a 15 4096
+f 12
+f 13
+a 16 128
+a 17 256
+f 14
+f 15
+a 18 64
+f 16
+f 17
+a 19 512
+f 18
+f 19
+a 20 100
+a 21 200
+a 22 300
+a 23 400
+a 24 500
+f 20
+f 22
+f 24
+a 25 150
+a 26 250
+a 27 350
+f 21
+f 23
+f 25
+f 26
+f 27

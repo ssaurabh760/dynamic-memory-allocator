@@ -1,0 +1,59 @@
+# Pathological fragmentation scenario
+# Alternating small and large allocations designed to fragment the heap
+
+# Phase 1: Interleave small and large
+a 0 16
+a 1 4000
+a 2 16
+a 3 4000
+a 4 16
+a 5 4000
+a 6 16
+a 7 4000
+a 8 16
+a 9 4000
+
+# Phase 2: Free all large blocks (creates gaps that small blocks can't fill)
+f 1
+f 3
+f 5
+f 7
+f 9
+
+# Phase 3: Try to allocate a block larger than any single gap
+# This should coalesce or extend heap
+a 10 8000
+f 10
+
+# Phase 4: Allocate many tiny blocks in the gaps
+a 20 16
+a 21 16
+a 22 16
+a 23 16
+a 24 16
+a 25 16
+a 26 16
+a 27 16
+a 28 16
+a 29 16
+
+# Phase 5: Free everything
+f 0
+f 2
+f 4
+f 6
+f 8
+f 20
+f 21
+f 22
+f 23
+f 24
+f 25
+f 26
+f 27
+f 28
+f 29
+
+# Phase 6: After full coalesce, allocate large block
+a 50 20000
+f 50

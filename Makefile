@@ -16,10 +16,11 @@ COMMON_SRC = $(MEMLIB_SRC) $(MM_SRC)
 TEST_BASIC = test_basic
 TEST_COALESCE = test_coalesce
 TEST_STRESS = test_stress
+TEST_TRACE = test_trace
 
-.PHONY: all clean test debug benchmark
+.PHONY: all clean test debug benchmark trace
 
-all: $(TEST_BASIC) $(TEST_COALESCE) $(TEST_STRESS)
+all: $(TEST_BASIC) $(TEST_COALESCE) $(TEST_STRESS) $(TEST_TRACE)
 
 $(TEST_BASIC): $(TEST_DIR)/test_basic.c $(COMMON_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
@@ -28,6 +29,9 @@ $(TEST_COALESCE): $(TEST_DIR)/test_coalesce.c $(COMMON_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
 
 $(TEST_STRESS): $(TEST_DIR)/test_stress.c $(COMMON_SRC)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
+
+$(TEST_TRACE): $(TEST_DIR)/test_trace.c $(COMMON_SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^
 
 debug: CFLAGS = $(DEBUG_FLAGS)
@@ -43,10 +47,14 @@ test: all
 	@echo "=== Running Stress Tests ==="
 	./$(TEST_STRESS)
 
+trace: $(TEST_TRACE)
+	@echo "=== Running Trace Tests ==="
+	./$(TEST_TRACE)
+
 benchmark: $(TEST_STRESS)
 	@echo "=== Running Benchmarks ==="
 	./scripts/benchmark.sh
 
 clean:
-	rm -f $(TEST_BASIC) $(TEST_COALESCE) $(TEST_STRESS)
+	rm -f $(TEST_BASIC) $(TEST_COALESCE) $(TEST_STRESS) $(TEST_TRACE)
 	rm -rf *.dSYM
