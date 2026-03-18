@@ -1,0 +1,32 @@
+# Object files
+*.o
+*.obj
+
+# Executables
+*.out
+*.exe
+test_basic
+test_coalesce
+test_stress
+benchmark
+
+# Debug
+*.dSYM/
+
+# Build artifacts
+build/
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Valgrind
+vgcore.*
+valgrind-out.txt
