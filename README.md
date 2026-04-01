@@ -1,6 +1,6 @@
 # Dynamic Memory Allocator
 
-A high-performance `malloc`-like dynamic memory allocator implemented in C. Built from scratch using an explicit free list with boundary tag coalescing, block splitting, and footer elimination for allocated blocks.
+A high-performance `malloc`-like dynamic memory allocator implemented in C. Built from scratch using an explicit free list with boundary tag coalescing, block splitting, and footer elimination for allocated blocks. Supports full POSIX-compatible allocation semantics including `malloc`, `free`, `realloc`, and `calloc`.
 
 ## Performance
 
